@@ -1,0 +1,15 @@
+services:
+  db:
+    image: pgvector/pgvector:pg17
+    container_name: invoiceflow-db
+    environment:
+      POSTGRES_USER: invoiceflow
+      POSTGRES_PASSWORD: localdev
+      POSTGRES_DB: invoiceflow
+    ports:
+      - "5432:5432"
+    volumes:
+      - dbdata:/var/lib/postgresql/data
+
+volumes:
+  dbdata:
