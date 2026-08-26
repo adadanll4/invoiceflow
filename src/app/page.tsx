@@ -1,6 +1,7 @@
 import { sql, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { organizations, products, stockLedger } from "@/db/schema";
+import { receiveStock } from "./actions";
 
 export default async function Home() {
   const [org] = await db.select().from(organizations).limit(1);
@@ -22,6 +23,7 @@ export default async function Home() {
   return (
     <main className="mx-auto max-w-2xl p-8">
       <h1 className="mb-6 text-2xl font-medium">Stock on hand</h1>
+
       <ul className="divide-y">
         {stock.map((p) => (
           <li key={p.id} className="flex items-center justify-between py-3">
@@ -41,6 +43,37 @@ export default async function Home() {
           </li>
         ))}
       </ul>
+
+      <form action={receiveStock} className="mt-8 flex gap-2">
+        <select
+          name="productId"
+          required
+          className="flex-1 rounded-md border px-3 py-2 text-sm"
+        >
+          {stock.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.sku}
+            </option>
+          ))}
+        </select>
+        <input
+          name="quantity"
+          type="number"
+          required
+          placeholder="Qty"
+          className="w-24 rounded-md border px-3 py-2 text-sm"
+        />
+        <button
+          type="submit"
+          className="rounded-md bg-black px-4 py-2 text-sm text-white"
+        >
+          Add
+        </button>
+      </form>
+
+      <p className="mt-2 text-sm text-gray-500">
+        Use a negative number to record a sale.
+      </p>
     </main>
   );
 }
