@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { invoices, organizations, products, suppliers } from "@/db/schema";
+import { uploadInvoice } from "../actions";
 import InvoiceForm from "./invoice-form";
 
 export default async function InvoicesPage() {
@@ -19,6 +20,7 @@ export default async function InvoicesPage() {
       invoiceDate: invoices.invoiceDate,
       totalCents: invoices.totalCents,
       status: invoices.status,
+      sourceFileKey: invoices.sourceFileKey,
       supplierName: suppliers.name,
     })
     .from(invoices)
@@ -30,6 +32,22 @@ export default async function InvoicesPage() {
     <main className="mx-auto max-w-2xl p-8">
       <h1 className="mb-6 text-2xl font-medium">Invoices</h1>
 
+      <form action={uploadInvoice} className="mb-8 flex gap-2">
+        <input
+          name="file"
+          type="file"
+          required
+          accept="image/jpeg,image/png,image/webp,application/pdf"
+          className="flex-1 rounded-md border px-3 py-2 text-sm"
+        />
+        <button
+          type="submit"
+          className="rounded-md bg-black px-4 py-2 text-sm text-white"
+        >
+          Upload receipt
+        </button>
+      </form>
+
       {list.length === 0 ? (
         <p className="text-sm text-gray-500">No invoices yet.</p>
       ) : (
@@ -37,10 +55,18 @@ export default async function InvoicesPage() {
           {list.map((inv) => (
             <li key={inv.id} className="flex items-center justify-between py-3">
               <div>
-                <div>{inv.invoiceNumber ?? "(no number)"}</div>
+                <div className="flex items-center gap-2">
+                  <span>{inv.invoiceNumber ?? "(no number)"}</span>
+                  {inv.status === "pending_review" && (
+                    <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                      pending
+                    </span>
+                  )}
+                </div>
                 <div className="text-sm text-gray-500">
                   {inv.supplierName ?? "Unknown supplier"}
                   {inv.invoiceDate ? ` · ${inv.invoiceDate}` : ""}
+                  {inv.sourceFileKey ? " · uploaded" : ""}
                 </div>
               </div>
               <span className="tabular-nums text-sm">

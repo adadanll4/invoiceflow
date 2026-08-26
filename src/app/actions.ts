@@ -10,6 +10,7 @@ import {
   stockLedger,
   suppliers,
 } from "@/db/schema";
+import { ALLOWED_TYPES, MAX_BYTES, saveUpload } from "@/lib/storage";
 
 export async function receiveStock(formData: FormData) {
   const productId = String(formData.get("productId") ?? "");
@@ -139,3 +140,28 @@ export async function createInvoice(formData: FormData) {
   revalidatePath("/");
 }
 
+export async function uploadInvoice(formData: FormData) {
+  const file = formData.get("file");
+
+  if (!(file instanceof File) || file.size === 0) return;
+  if (!ALLOWED_TYPES[file.type]) return;
+  if (file.size > MAX_BYTES) return;
+
+  const [org] = await db.select().from(organizations).limit(1);
+
+  let key: string;
+  try {
+    key = await saveUpload(file);
+  } catch (e) {
+    console.error("Upload failed:", e);
+    return;
+  }
+
+  await db.insert(invoices).values({
+    orgId: org.id,
+    status: "pending_review",
+    sourceFileKey: key,
+  });
+
+  revalidatePath("/invoices");
+}
