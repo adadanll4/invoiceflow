@@ -36,3 +36,10 @@ export async function readUpload(key: string): Promise<Buffer> {
   return readFile(path.join(UPLOAD_DIR, key));
 }
 
+export function mimeFromKey(key: string): string {
+  const ext = key.slice(key.lastIndexOf(".")).toLowerCase();
+  const found = Object.entries(ALLOWED_TYPES).find(([, e]) => e === ext);
+  if (!found) throw new Error(`Unknown extension: ${ext}`);
+  return found[0];
+}
+

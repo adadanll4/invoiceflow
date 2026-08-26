@@ -11,6 +11,9 @@ import {
   suppliers,
 } from "@/db/schema";
 import { ALLOWED_TYPES, MAX_BYTES, saveUpload } from "@/lib/storage";
+import { eq } from "drizzle-orm";
+import { extractInvoice } from "@/lib/extract";
+import { mimeFromKey, readUpload } from "@/lib/storage";
 
 export async function receiveStock(formData: FormData) {
   const productId = String(formData.get("productId") ?? "");
@@ -161,6 +164,74 @@ export async function uploadInvoice(formData: FormData) {
     orgId: org.id,
     status: "pending_review",
     sourceFileKey: key,
+  });
+
+  revalidatePath("/invoices");
+}
+export async function runExtraction(formData: FormData) {
+  const invoiceId = String(formData.get("invoiceId") ?? "");
+  if (!invoiceId) return;
+
+  const [invoice] = await db
+    .select()
+    .from(invoices)
+    .where(eq(invoices.id, invoiceId))
+    .limit(1);
+
+  if (!invoice?.sourceFileKey) return;
+
+  let result;
+  try {
+    const bytes = await readUpload(invoice.sourceFileKey);
+    result = await extractInvoice(bytes, mimeFromKey(invoice.sourceFileKey));
+  } catch (e) {
+    console.error("Extraction failed:", e);
+    return;
+  }
+
+  if (result.lines.length === 0) {
+    console.warn("No line items found in", invoice.sourceFileKey);
+    return;
+  }
+
+  let supplierId = invoice.supplierId;
+  if (!supplierId && result.supplierName) {
+    const [supplier] = await db
+      .insert(suppliers)
+      .values({ orgId: invoice.orgId, name: result.supplierName })
+      .returning();
+    supplierId = supplier.id;
+  }
+
+  const totalCents = result.lines.reduce(
+    (sum, l) => sum + Math.round(l.quantity) * Math.round(l.unitPrice * 100),
+    0
+  );
+
+  await db.transaction(async (tx) => {
+    await tx.delete(invoiceLines).where(eq(invoiceLines.invoiceId, invoiceId));
+
+    for (const [i, line] of result.lines.entries()) {
+      await tx.insert(invoiceLines).values({
+        invoiceId,
+        lineNumber: i + 1,
+        rawDescription: line.description,
+        quantity: Math.round(line.quantity),
+        unitPriceCents: Math.round(line.unitPrice * 100),
+        matchStatus: "unmatched",
+      });
+    }
+
+    await tx
+      .update(invoices)
+      .set({
+        supplierId,
+        invoiceNumber: result.invoiceNumber ?? invoice.invoiceNumber,
+        invoiceDate: result.invoiceDate ?? invoice.invoiceDate,
+        totalCents,
+        status: "pending_review",
+      })
+      .where(eq(invoices.id, invoiceId));
   });
 
   revalidatePath("/invoices");

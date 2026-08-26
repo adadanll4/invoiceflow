@@ -1,7 +1,13 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
-import { invoices, organizations, products, suppliers } from "@/db/schema";
-import { uploadInvoice } from "../actions";
+import {
+  invoiceLines,
+  invoices,
+  organizations,
+  products,
+  suppliers,
+} from "@/db/schema";
+import { runExtraction, uploadInvoice } from "../actions";
 import InvoiceForm from "./invoice-form";
 
 export default async function InvoicesPage() {
@@ -28,6 +34,27 @@ export default async function InvoicesPage() {
     .where(eq(invoices.orgId, org.id))
     .orderBy(desc(invoices.createdAt));
 
+  const allLines = await db
+    .select({
+      invoiceId: invoiceLines.invoiceId,
+      lineNumber: invoiceLines.lineNumber,
+      rawDescription: invoiceLines.rawDescription,
+      quantity: invoiceLines.quantity,
+      unitPriceCents: invoiceLines.unitPriceCents,
+      matchStatus: invoiceLines.matchStatus,
+    })
+    .from(invoiceLines)
+    .innerJoin(invoices, eq(invoiceLines.invoiceId, invoices.id))
+    .where(eq(invoices.orgId, org.id))
+    .orderBy(invoiceLines.lineNumber);
+
+  const linesByInvoice = new Map<string, typeof allLines>();
+  for (const line of allLines) {
+    const existing = linesByInvoice.get(line.invoiceId) ?? [];
+    existing.push(line);
+    linesByInvoice.set(line.invoiceId, existing);
+  }
+
   return (
     <main className="mx-auto max-w-2xl p-8">
       <h1 className="mb-6 text-2xl font-medium">Invoices</h1>
@@ -52,28 +79,62 @@ export default async function InvoicesPage() {
         <p className="text-sm text-gray-500">No invoices yet.</p>
       ) : (
         <ul className="divide-y">
-          {list.map((inv) => (
-            <li key={inv.id} className="flex items-center justify-between py-3">
-              <div>
-                <div className="flex items-center gap-2">
-                  <span>{inv.invoiceNumber ?? "(no number)"}</span>
-                  {inv.status === "pending_review" && (
-                    <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
-                      pending
+          {list.map((inv) => {
+            const lines = linesByInvoice.get(inv.id) ?? [];
+            return (
+              <li key={inv.id} className="py-4">
+                <div className="flex items-center justify-between">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span>{inv.invoiceNumber ?? "(no number)"}</span>
+                      {inv.status === "pending_review" && (
+                        <span className="rounded bg-amber-100 px-2 py-0.5 text-xs text-amber-800">
+                          pending
+                        </span>
+                      )}
+                    </div>
+                    <div className="text-sm text-gray-500">
+                      {inv.supplierName ?? "Unknown supplier"}
+                      {inv.invoiceDate ? ` · ${inv.invoiceDate}` : ""}
+                    </div>
+                  </div>
+
+                  <div className="flex items-center gap-3">
+                    <span className="tabular-nums text-sm">
+                      ₱{(inv.totalCents / 100).toFixed(2)}
                     </span>
-                  )}
+                    {inv.sourceFileKey && (
+                      <form action={runExtraction}>
+                        <input type="hidden" name="invoiceId" value={inv.id} />
+                        <button
+                          type="submit"
+                          className="rounded-md border px-3 py-1.5 text-sm"
+                        >
+                          {lines.length > 0 ? "Re-read" : "Read receipt"}
+                        </button>
+                      </form>
+                    )}
+                  </div>
                 </div>
-                <div className="text-sm text-gray-500">
-                  {inv.supplierName ?? "Unknown supplier"}
-                  {inv.invoiceDate ? ` · ${inv.invoiceDate}` : ""}
-                  {inv.sourceFileKey ? " · uploaded" : ""}
-                </div>
-              </div>
-              <span className="tabular-nums text-sm">
-                ₱{(inv.totalCents / 100).toFixed(2)}
-              </span>
-            </li>
-          ))}
+
+                {lines.length > 0 && (
+                  <ul className="mt-3 space-y-1 border-l pl-4">
+                    {lines.map((l) => (
+                      <li
+                        key={`${l.invoiceId}-${l.lineNumber}`}
+                        className="flex justify-between text-sm text-gray-600"
+                      >
+                        <span>{l.rawDescription}</span>
+                        <span className="tabular-nums">
+                          {l.quantity} × ₱{(l.unitPriceCents / 100).toFixed(2)}
+                        </span>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+              </li>
+            );
+          })}
         </ul>
       )}
 
