@@ -1,7 +1,8 @@
 import {
   pgTable, pgEnum, uuid, text, integer, bigint, real, date,
-  timestamp, unique, index,
+  timestamp, unique, index, vector
 } from "drizzle-orm/pg-core";
+
 
 export const ledgerReason = pgEnum("ledger_reason", [
   "purchase", "sale", "adjustment", "stock_count", "reversal",
@@ -39,8 +40,10 @@ export const products = pgTable("products", {
   unitCostCents: integer("unit_cost_cents").notNull().default(0),
   reorderPoint: integer("reorder_point").notNull().default(0),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
+  embedding: vector("embedding", { dimensions: 768 }),
 }, (t) => [
   unique("products_org_sku_unique").on(t.orgId, t.sku),
+  index("products_embedding_idx").using("hnsw", t.embedding.op("vector_cosine_ops")),
 ]);
 
 export const invoices = pgTable("invoices", {
@@ -52,7 +55,8 @@ export const invoices = pgTable("invoices", {
   invoiceDate: date("invoice_date"),
   totalCents: bigint("total_cents", { mode: "number" }).notNull().default(0),
   status: invoiceStatus("status").notNull().default("draft"),
-  sourceFileKey: text("source_file_key"),
+  sourceFileKey: text("source_file_key"), 
+  driveViewUrl: text("drive_view_url"),
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
 }, (t) => [
   index("invoices_org_status_idx").on(t.orgId, t.status),

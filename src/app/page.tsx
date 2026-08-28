@@ -1,3 +1,5 @@
+{/* this is what the user sees */}  
+
 import { sql, eq } from "drizzle-orm";
 import { db } from "@/db";
 import { organizations, products, stockLedger } from "@/db/schema";

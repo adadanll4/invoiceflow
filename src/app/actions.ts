@@ -11,9 +11,11 @@ import {
   suppliers,
 } from "@/db/schema";
 import { ALLOWED_TYPES, MAX_BYTES, saveUpload } from "@/lib/storage";
-import { eq } from "drizzle-orm";
+import { and, eq, isNotNull, sql } from "drizzle-orm";
 import { extractInvoice } from "@/lib/extract";
 import { mimeFromKey, readUpload } from "@/lib/storage";
+import { backupToDrive } from "@/lib/drive";
+import { embed } from "@/lib/embed";
 
 export async function receiveStock(formData: FormData) {
   const productId = String(formData.get("productId") ?? "");
@@ -160,14 +162,150 @@ export async function uploadInvoice(formData: FormData) {
     return;
   }
 
-  await db.insert(invoices).values({
-    orgId: org.id,
-    status: "pending_review",
-    sourceFileKey: key,
-  });
+  const [invoice] = await db
+    .insert(invoices)
+    .values({ orgId: org.id, status: "pending_review", sourceFileKey: key })
+    .returning();
+
+  try {
+    const bytes = await readUpload(key);
+    const driveName = `${new Date().toISOString().slice(0, 10)}_${file.name}`;
+    const viewUrl = await backupToDrive(bytes, driveName, mimeFromKey(key));
+
+    if (viewUrl) {
+      await db
+        .update(invoices)
+        .set({ driveViewUrl: viewUrl })
+        .where(eq(invoices.id, invoice.id));
+    }
+  } catch (e) {
+    console.error("Drive backup skipped:", e);
+  }
 
   revalidatePath("/invoices");
 }
+
+export async function confirmLine(formData: FormData) {
+  const lineId = String(formData.get("lineId") ?? "");
+  const productId = String(formData.get("productId") ?? "");
+  if (!lineId || !productId) return;
+
+  const [line] = await db
+    .select({ invoiceId: invoiceLines.invoiceId })
+    .from(invoiceLines)
+    .where(eq(invoiceLines.id, lineId))
+    .limit(1);
+
+  if (!line) return;
+
+  const [invoice] = await db
+    .select({ status: invoices.status })
+    .from(invoices)
+    .where(eq(invoices.id, line.invoiceId))
+    .limit(1);
+
+  if (invoice?.status === "posted") return;
+
+  await db
+    .update(invoiceLines)
+    .set({ productId, matchStatus: "confirmed", matchConfidence: 1 })
+    .where(eq(invoiceLines.id, lineId));
+
+  revalidatePath("/invoices");
+}
+
+export async function rejectLine(formData: FormData) {
+  const lineId = String(formData.get("lineId") ?? "");
+  if (!lineId) return;
+
+  const [line] = await db
+    .select({ invoiceId: invoiceLines.invoiceId })
+    .from(invoiceLines)
+    .where(eq(invoiceLines.id, lineId))
+    .limit(1);
+
+  if (!line) return;
+
+  const [invoice] = await db
+    .select({ status: invoices.status })
+    .from(invoices)
+    .where(eq(invoices.id, line.invoiceId))
+    .limit(1);
+
+  if (invoice?.status === "posted") return;
+
+  await db
+    .update(invoiceLines)
+    .set({ productId: null, matchStatus: "rejected" })
+    .where(eq(invoiceLines.id, lineId));
+
+  revalidatePath("/invoices");
+}
+
+export async function postInvoice(formData: FormData) {
+  const invoiceId = String(formData.get("invoiceId") ?? "");
+  if (!invoiceId) return;
+
+  const [invoice] = await db
+    .select()
+    .from(invoices)
+    .where(eq(invoices.id, invoiceId))
+    .limit(1);
+
+  if (!invoice) return;
+
+  if (invoice.status === "posted") {
+    console.warn("Invoice already posted:", invoiceId);
+    return;
+  }
+
+  const lines = await db
+    .select()
+    .from(invoiceLines)
+    .where(eq(invoiceLines.invoiceId, invoiceId));
+
+  const unresolved = lines.filter(
+    (l) => l.matchStatus === "needs_review" || l.matchStatus === "unmatched"
+  );
+
+  if (unresolved.length > 0) {
+    console.warn(`${unresolved.length} line(s) still unresolved`);
+    return;
+  }
+
+  const postable = lines.filter(
+    (l) =>
+      l.productId &&
+      (l.matchStatus === "auto_matched" || l.matchStatus === "confirmed")
+  );
+
+  if (postable.length === 0) {
+    console.warn("Nothing to post on invoice", invoiceId);
+    return;
+  }
+
+  await db.transaction(async (tx) => {
+    for (const line of postable) {
+      await tx.insert(stockLedger).values({
+        orgId: invoice.orgId,
+        productId: line.productId!,
+        delta: line.quantity,
+        reason: "purchase",
+        invoiceLineId: line.id,
+        note: invoice.invoiceNumber ?? "receipt",
+      });
+    }
+
+    await tx
+      .update(invoices)
+      .set({ status: "posted" })
+      .where(eq(invoices.id, invoiceId));
+  });
+
+  revalidatePath("/invoices");
+  revalidatePath("/");
+}
+
 export async function runExtraction(formData: FormData) {
   const invoiceId = String(formData.get("invoiceId") ?? "");
   if (!invoiceId) return;
@@ -233,6 +371,82 @@ export async function runExtraction(formData: FormData) {
       })
       .where(eq(invoices.id, invoiceId));
   });
+
+  revalidatePath("/invoices");
+}
+
+const AUTO_MATCH_THRESHOLD = 0.78;
+const MIN_CANDIDATE = 0.55;
+
+export async function runMatching(formData: FormData) {
+  const invoiceId = String(formData.get("invoiceId") ?? "");
+  if (!invoiceId) return;
+
+  const [invoice] = await db
+    .select()
+    .from(invoices)
+    .where(eq(invoices.id, invoiceId))
+    .limit(1);
+
+  if (!invoice) return;
+
+  const lines = await db
+    .select()
+    .from(invoiceLines)
+    .where(eq(invoiceLines.invoiceId, invoiceId))
+    .orderBy(invoiceLines.lineNumber);
+
+  for (const line of lines) {
+    if (line.matchStatus === "confirmed" || line.matchStatus === "rejected") {
+      continue;
+    }
+
+    let vector: number[];
+    try {
+      vector = await embed(line.rawDescription);
+    } catch (e) {
+      console.error("Could not embed line", line.lineNumber, e);
+      continue;
+    }
+
+    const literal = JSON.stringify(vector);
+
+    const [best] = await db
+      .select({
+        id: products.id,
+        sku: products.sku,
+        similarity: sql<number>`1 - (${products.embedding} <=> ${literal}::vector)`
+          .mapWith(Number),
+      })
+      .from(products)
+      .where(
+        and(eq(products.orgId, invoice.orgId), isNotNull(products.embedding))
+      )
+      .orderBy(sql`${products.embedding} <=> ${literal}::vector`)
+      .limit(1);
+
+    if (!best || best.similarity < MIN_CANDIDATE) {
+      await db
+        .update(invoiceLines)
+        .set({
+          productId: null,
+          matchConfidence: best?.similarity ?? null,
+          matchStatus: "unmatched",
+        })
+        .where(eq(invoiceLines.id, line.id));
+      continue;
+    }
+
+    await db
+      .update(invoiceLines)
+      .set({
+        productId: best.id,
+        matchConfidence: best.similarity,
+        matchStatus:
+          best.similarity >= AUTO_MATCH_THRESHOLD ? "auto_matched" : "needs_review",
+      })
+      .where(eq(invoiceLines.id, line.id));
+  }
 
   revalidatePath("/invoices");
 }
