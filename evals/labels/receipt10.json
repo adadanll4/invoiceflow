@@ -1,0 +1,22 @@
+{
+  "supplierName": "PH Example Corporation Ltd",
+  "invoiceNumber": "SEA001220",
+  "invoiceDate": "2024-11-25",
+  "lines": [
+    {
+      "description": "SuiteNet Backrest Office Chair",
+      "quantity": 1,
+      "unitPrice": 1120
+    },
+    {
+      "description": "SuiteNet Guide Beginner's Guide",
+      "quantity": 1,
+      "unitPrice": 2000
+    },
+    {
+      "description": "SuiteNet Laptop Work Laptop",
+      "quantity": 1,
+      "unitPrice": 3000
+    }
+  ]
+}

@@ -1,0 +1,57 @@
+{
+  "supplierName": "savemore MARKET",
+  "invoiceNumber": "04509926",
+  "invoiceDate": "2020-06-03",
+  "lines": [
+    {
+      "description": "ArielDetPSun1.41",
+      "quantity": 1,
+      "unitPrice": 209.75
+    },
+    {
+      "description": "PalPnkIntnsveMs400",
+      "quantity": 1,
+      "unitPrice": 160
+    },
+    {
+      "description": "CreamSilkCon 180ml",
+      "quantity": 1,
+      "unitPrice": 108.75
+    },
+    {
+      "description": "SurfFCLuxPerRef720",
+      "quantity": 1,
+      "unitPrice": 122.75
+    },
+    {
+      "description": "Maya APFlour2KG*",
+      "quantity": 1,
+      "unitPrice": 204.5
+    },
+    {
+      "description": "SSwanSukaP1lt",
+      "quantity": 1,
+      "unitPrice": 35.5
+    },
+    {
+      "description": "MaggiMagicSarap",
+      "quantity": 1,
+      "unitPrice": 36
+    },
+    {
+      "description": "AjinomotoMSG100g",
+      "quantity": 1,
+      "unitPrice": 19.75
+    },
+    {
+      "description": "SMBONUS SUGAR1k1 @50",
+      "quantity": 2,
+      "unitPrice": 50
+    },
+    {
+      "description": "SMBBRWNSGAR1K",
+      "quantity": 1,
+      "unitPrice": 45
+    }
+  ]
+}

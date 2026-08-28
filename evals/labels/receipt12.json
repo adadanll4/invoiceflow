@@ -1,0 +1,12 @@
+{
+  "supplierName": "PERF RESTAURANTS INC.",
+  "invoiceNumber": "002-0264750",
+  "invoiceDate": "2018-08-22",
+  "lines": [
+    {
+      "description": "Whopper",
+      "quantity": 1,
+      "unitPrice": 135
+    }
+  ]
+}

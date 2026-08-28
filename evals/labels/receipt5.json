@@ -1,0 +1,22 @@
+{
+  "supplierName": "POWER MAC CENTER, INC.",
+  "invoiceNumber": "178095",
+  "invoiceDate": "2022-03-20",
+  "lines": [
+    {
+      "description": "13-inch MacBook Air: Apple M1 chip with 8-core CPU and 7-core GPU 256GB - Silver SFVFH94LQQ6L7",
+      "quantity": 1,
+      "unitPrice": 56990
+    },
+    {
+      "description": "Paper Bag Large",
+      "quantity": 1,
+      "unitPrice": 0
+    },
+    {
+      "description": "90 days Complimentary Software Fix",
+      "quantity": 1,
+      "unitPrice": 0
+    }
+  ]
+}

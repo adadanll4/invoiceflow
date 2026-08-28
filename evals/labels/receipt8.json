@@ -1,0 +1,17 @@
+{
+  "supplierName": "PURE WELL EQUIPMENT TRADING",
+  "invoiceNumber": "1871",
+  "invoiceDate": "2026-08-25",
+  "lines": [
+    {
+      "description": "Foot therapy",
+      "quantity": 1,
+      "unitPrice": 27520
+    },
+    {
+      "description": "Deep tissue therapy",
+      "quantity": 1,
+      "unitPrice": 0
+    }
+  ]
+}

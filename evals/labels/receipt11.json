@@ -1,0 +1,47 @@
+{
+  "supplierName": "Dagohoy, Diana Betty",
+  "invoiceNumber": "4503/0463755",
+  "invoiceDate": "2026-06-04",
+  "lines": [
+    {
+      "description": "338 CANISTER STUFF EM ALL 1.6L LARGE @P55.00ea",
+      "quantity": 2,
+      "unitPrice": 55
+    },
+    {
+      "description": "0921 45CM BASIN 555 MAKAPAL @P225.00ea",
+      "quantity": 1,
+      "unitPrice": 225
+    },
+    {
+      "description": "348 TRAY (HI-TOP) @P65.00ea",
+      "quantity": 1,
+      "unitPrice": 65
+    },
+    {
+      "description": "804 STOCK BOX W/ HANDLE 10L @P185.00ea",
+      "quantity": 8,
+      "unitPrice": 185
+    },
+    {
+      "description": "2010 XL WATER DIPPER MOCHA @P40.00ea",
+      "quantity": 1,
+      "unitPrice": 40
+    },
+    {
+      "description": "8742 PEELER @P55.00ea",
+      "quantity": 1,
+      "unitPrice": 55
+    },
+    {
+      "description": "1133 14INCH FOOD TONG (245) @P60.00ea",
+      "quantity": 1,
+      "unitPrice": 60
+    },
+    {
+      "description": "HX116/CFZ-15 CHOPPING BOARD @P145.00ea (P150.00 - 3.33%)",
+      "quantity": 1,
+      "unitPrice": 145
+    }
+  ]
+}

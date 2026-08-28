@@ -1,0 +1,52 @@
+{
+  "supplierName": "savemore MARKET",
+  "invoiceNumber": "08-00036843",
+  "invoiceDate": "2022-12-19",
+  "lines": [
+    {
+      "description": "FemmeTsu2Ply250",
+      "quantity": 1,
+      "unitPrice": 68.75
+    },
+    {
+      "description": "MYSAN SkyFlakes",
+      "quantity": 1,
+      "unitPrice": 60.5
+    },
+    {
+      "description": "NissinEggnogReg130",
+      "quantity": 3,
+      "unitPrice": 33.5
+    },
+    {
+      "description": "JnJDwbryBlbryChsCk",
+      "quantity": 1,
+      "unitPrice": 85
+    },
+    {
+      "description": "GleeGrTeaTpste150",
+      "quantity": 1,
+      "unitPrice": 49.75
+    },
+    {
+      "description": "DelMontePttCrspOrg",
+      "quantity": 5,
+      "unitPrice": 22.95
+    },
+    {
+      "description": "Sprite Can 320ml",
+      "quantity": 3,
+      "unitPrice": 34.5
+    },
+    {
+      "description": "GAR WhiteBreadRS",
+      "quantity": 1,
+      "unitPrice": 82
+    },
+    {
+      "description": "# Turon WithLangka",
+      "quantity": 1,
+      "unitPrice": 25
+    }
+  ]
+}

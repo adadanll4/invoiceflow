@@ -1,0 +1,17 @@
+{
+  "supplierName": "SM HYPERMARKET",
+  "invoiceNumber": "010529530",
+  "invoiceDate": "2018-05-13",
+  "lines": [
+    {
+      "description": "MagnoliaTableaYema",
+      "quantity": 1,
+      "unitPrice": 250
+    },
+    {
+      "description": "MagnoliaMcpnCrml",
+      "quantity": 1,
+      "unitPrice": 250
+    }
+  ]
+}

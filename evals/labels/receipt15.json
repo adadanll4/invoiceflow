@@ -1,0 +1,17 @@
+{
+  "supplierName": "Hi-Tech Computers",
+  "invoiceNumber": "HTC/25-26/644",
+  "invoiceDate": "2025-08-02",
+  "lines": [
+    {
+      "description": "HP 15- FD0466TU I5 13th/8/512/15.6\"/win11+office",
+      "quantity": 1,
+      "unitPrice": 50846.62
+    },
+    {
+      "description": "HP BAGPACK",
+      "quantity": 1,
+      "unitPrice": 0.01
+    }
+  ]
+}

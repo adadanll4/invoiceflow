@@ -1,0 +1,17 @@
+{
+  "supplierName": "MERCURY DRUG - ROCKWELL CENTER MAKATI",
+  "invoiceNumber": "102443581801-01",
+  "invoiceDate": "2026-08-20",
+  "lines": [
+    {
+      "description": "ORAL B WAX DF50m",
+      "quantity": 1,
+      "unitPrice": 175
+    },
+    {
+      "description": "ORAHEX O R 380ML",
+      "quantity": 1,
+      "unitPrice": 399
+    }
+  ]
+}

@@ -12,7 +12,9 @@
     "db:seed": "tsx --env-file=.env.local src/db/seed.ts",
     "drive:auth": "tsx --env-file=.env.local src/scripts/authorize-drive.ts",
     "drive:create-folder": "tsx --env-file=.env.local src/scripts/create-drive-folder.ts",
-    "db:embed": "tsx --env-file=.env.local src/db/embed-products.ts"
+    "db:embed": "tsx --env-file=.env.local src/db/embed-products.ts",
+    "evals:label": "tsx --env-file=.env.local src/scripts/label-receipt.ts",
+    "evals:run": "tsx --env-file=.env.local src/scripts/run-evals.ts"
   },
   "dependencies": {
     "drizzle-orm": "^0.45.2",

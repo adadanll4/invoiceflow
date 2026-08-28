@@ -1,0 +1,12 @@
+{
+  "supplierName": "AYALALAND MALLS INC.",
+  "invoiceNumber": "5-01966361",
+  "invoiceDate": "2024-01-16",
+  "lines": [
+    {
+      "description": "RETAIL",
+      "quantity": 1,
+      "unitPrice": 60
+    }
+  ]
+}

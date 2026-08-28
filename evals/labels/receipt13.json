@@ -1,0 +1,47 @@
+{
+  "supplierName": null,
+  "invoiceNumber": "0000008804",
+  "invoiceDate": "2022-11-09",
+  "lines": [
+    {
+      "description": "MAYA ORIGINAL HOTCAK",
+      "quantity": 2,
+      "unitPrice": 35
+    },
+    {
+      "description": "CLEAR SHMPOO COMPLET",
+      "quantity": 1,
+      "unitPrice": 279
+    },
+    {
+      "description": "SANICARE ABSORBENT C",
+      "quantity": 1,
+      "unitPrice": 38
+    },
+    {
+      "description": "CENTURY TUNA AFRITAD",
+      "quantity": 2,
+      "unitPrice": 41
+    },
+    {
+      "description": "HUNTS PORK BEANS 390",
+      "quantity": 2,
+      "unitPrice": 62
+    },
+    {
+      "description": "JOY DISH LIQUID ANTI",
+      "quantity": 2,
+      "unitPrice": 80
+    },
+    {
+      "description": "CENTURY TUNA ADOBO 1",
+      "quantity": 2,
+      "unitPrice": 42
+    },
+    {
+      "description": "CHEERS TRASH BAG BLA",
+      "quantity": 1,
+      "unitPrice": 58
+    }
+  ]
+}

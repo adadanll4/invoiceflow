@@ -40,3 +40,7 @@ yarn-error.log*
 *.tsbuildinfo
 next-env.d.ts
 uploads/
+evals/receipts/
+evals/results/
+evals/receipts/
+evals/results/

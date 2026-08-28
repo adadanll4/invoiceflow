@@ -1,0 +1,17 @@
+{
+  "supplierName": "THE MARKETPLACE",
+  "invoiceNumber": "0000056551",
+  "invoiceDate": "2026-01-03",
+  "lines": [
+    {
+      "description": "finest meat prem bee",
+      "quantity": 1,
+      "unitPrice": 776
+    },
+    {
+      "description": "gf cabbage",
+      "quantity": 0.85,
+      "unitPrice": 205
+    }
+  ]
+}

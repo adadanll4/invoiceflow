@@ -1,0 +1,47 @@
+{
+  "supplierName": "SM SUPERMARKET",
+  "invoiceNumber": "59EB438824",
+  "invoiceDate": null,
+  "lines": [
+    {
+      "description": "BIOKIPS FKEPER",
+      "quantity": 1,
+      "unitPrice": 195
+    },
+    {
+      "description": "+ MC CIN. GROUND30",
+      "quantity": 1,
+      "unitPrice": 51.5
+    },
+    {
+      "description": "LangneseBeeWldFlwr",
+      "quantity": 1,
+      "unitPrice": 229.5
+    },
+    {
+      "description": "QKROLDFSHNDOAT1.2",
+      "quantity": 1,
+      "unitPrice": 189.5
+    },
+    {
+      "description": "+ SOYFRESHHICLCIUM",
+      "quantity": 1,
+      "unitPrice": 64.5
+    },
+    {
+      "description": "HERITAGEWHLEALM250",
+      "quantity": 1,
+      "unitPrice": 296.5
+    },
+    {
+      "description": "BLCK GREENBAG LITE",
+      "quantity": 1,
+      "unitPrice": 10
+    },
+    {
+      "description": "+ GAR WheatBrd300g",
+      "quantity": 1,
+      "unitPrice": 35
+    }
+  ]
+}

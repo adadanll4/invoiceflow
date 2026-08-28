@@ -1,0 +1,107 @@
+{
+  "supplierName": "BLENCO SUPERMARKET",
+  "invoiceNumber": "10034768",
+  "invoiceDate": "2017-10-22",
+  "lines": [
+    {
+      "description": "IRISH SPRING SOAP",
+      "quantity": 11,
+      "unitPrice": 200
+    },
+    {
+      "description": "VENUS LOTION TONIFIA",
+      "quantity": 2,
+      "unitPrice": 595
+    },
+    {
+      "description": "KELLOGG'S RICE KRISP",
+      "quantity": 1,
+      "unitPrice": 1200
+    },
+    {
+      "description": "SUNLIGHT SENSATION Y",
+      "quantity": 1,
+      "unitPrice": 600
+    },
+    {
+      "description": "DETTOL ANTISEPTIC DI",
+      "quantity": 1,
+      "unitPrice": 2350
+    },
+    {
+      "description": "LISTERINE MOUTH WASH",
+      "quantity": 1,
+      "unitPrice": 2550
+    },
+    {
+      "description": "PEAK TIN 2500G",
+      "quantity": 1,
+      "unitPrice": 6420
+    },
+    {
+      "description": "NESTLE MILO CRUNCHY",
+      "quantity": 1,
+      "unitPrice": 1050
+    },
+    {
+      "description": "KELLOGG'S CORN FLAKE",
+      "quantity": 1,
+      "unitPrice": 1490
+    },
+    {
+      "description": "SURE BODY SPRAY 250M",
+      "quantity": 1,
+      "unitPrice": 850
+    },
+    {
+      "description": "AXE YOU BODY SPRAY 1",
+      "quantity": 1,
+      "unitPrice": 850
+    },
+    {
+      "description": "CALVIN KLEIN COTTON",
+      "quantity": 1,
+      "unitPrice": 4800
+    },
+    {
+      "description": "NUTRI-C SACHET",
+      "quantity": 2,
+      "unitPrice": 420
+    },
+    {
+      "description": "HARIBO SACHET 160G",
+      "quantity": 1,
+      "unitPrice": 575
+    },
+    {
+      "description": "GOYA ADOBA ALL PURPO",
+      "quantity": 1,
+      "unitPrice": 2350
+    },
+    {
+      "description": "PEAK MILK REFILL 85",
+      "quantity": 1,
+      "unitPrice": 2100
+    },
+    {
+      "description": "SONSA SARDINES 125M",
+      "quantity": 10,
+      "unitPrice": 180
+    },
+    {
+      "description": "LUX PREMIUMS MEN'S U",
+      "quantity": 1,
+      "unitPrice": 1950
+    },
+    {
+      "description": "HARIBO 160G",
+      "quantity": 1,
+      "unitPrice": 575
+    },
+    {
+      "description": "HARIBO WORMS FIZZ 16",
+      "quantity": 1,
+      "unitPrice": 575
+    }
+  ]
+}
