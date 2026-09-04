@@ -1,8 +1,10 @@
 "use server";
 
 import { revalidatePath } from "next/cache";
+import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  invoiceFiles,
   invoiceLines,
   invoices,
   organizations,
@@ -10,14 +12,26 @@ import {
   stockLedger,
   suppliers,
 } from "@/db/schema";
-import { ALLOWED_TYPES, MAX_BYTES, saveUpload } from "@/lib/storage";
-import { extractInvoiceWithRetry } from "@/lib/extract";
-import { mimeFromKey, readUpload } from "@/lib/storage";
+import {
+  ALLOWED_TYPES,
+  MAX_BYTES,
+  mimeFromKey,
+  readUpload,
+  saveUpload,
+} from "@/lib/storage";
+import { extractPagesWithRetry, type ImagePart } from "@/lib/extract";
 import { backupToDrive } from "@/lib/drive";
 import { embed } from "@/lib/embed";
-import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
 import { logAction } from "@/lib/audit";
 
+const AUTO_MATCH_THRESHOLD = 0.78;
+const MIN_CANDIDATE = 0.55;
+
+type ActionResult = {
+  error?: string;
+  duplicate?: boolean;
+  success?: boolean;
+};
 
 export async function receiveStock(formData: FormData) {
   const productId = String(formData.get("productId") ?? "");
@@ -56,6 +70,7 @@ export async function receiveStock(formData: FormData) {
   revalidatePath("/");
   revalidatePath("/logs");
 }
+
 export async function createProduct(formData: FormData) {
   const sku = String(formData.get("sku") ?? "").trim().toUpperCase();
   const name = String(formData.get("name") ?? "").trim();
@@ -95,6 +110,7 @@ export async function createProduct(formData: FormData) {
 
   revalidatePath("/products");
   revalidatePath("/");
+  revalidatePath("/logs");
 }
 
 export async function createInvoice(formData: FormData) {
@@ -175,44 +191,94 @@ export async function createInvoice(formData: FormData) {
   revalidatePath("/");
 }
 
-export async function uploadInvoice(formData: FormData) {
-  const file = formData.get("file");
+async function createInvoiceFromFiles(
+  orgId: string,
+  files: File[]
+): Promise<void> {
+  const keys: string[] = [];
 
-  if (!(file instanceof File) || file.size === 0) return;
-  if (!ALLOWED_TYPES[file.type]) return;
-  if (file.size > MAX_BYTES) return;
-
-  const [org] = await db.select().from(organizations).limit(1);
-
-  let key: string;
-  try {
-    key = await saveUpload(file);
-  } catch (e) {
-    console.error("Upload failed:", e);
-    return;
+  for (const file of files) {
+    try {
+      keys.push(await saveUpload(file));
+    } catch (e) {
+      console.error(`Could not save ${file.name}:`, e);
+    }
   }
+
+  if (keys.length === 0) return;
 
   const [invoice] = await db
     .insert(invoices)
-    .values({ orgId: org.id, status: "pending_review", sourceFileKey: key })
+    .values({
+      orgId,
+      status: "pending_review",
+      sourceFileKey: keys[0],
+    })
     .returning();
 
-  try {
-    const bytes = await readUpload(key);
-    const driveName = `${new Date().toISOString().slice(0, 10)}_${file.name}`;
-    const viewUrl = await backupToDrive(bytes, driveName, mimeFromKey(key));
+  for (const [i, key] of keys.entries()) {
+    let viewUrl: string | null = null;
 
-    if (viewUrl) {
+    try {
+      const bytes = await readUpload(key);
+      const stamp = new Date().toISOString().slice(0, 10);
+      const suffix = keys.length > 1 ? `_p${i + 1}` : "";
+      const driveName = `${stamp}${suffix}_${files[i].name}`;
+      viewUrl = await backupToDrive(bytes, driveName, mimeFromKey(key));
+    } catch (e) {
+      console.error("Drive backup skipped:", e);
+    }
+
+    await db.insert(invoiceFiles).values({
+      invoiceId: invoice.id,
+      fileKey: key,
+      pageNumber: i + 1,
+      driveViewUrl: viewUrl,
+    });
+
+    if (i === 0 && viewUrl) {
       await db
         .update(invoices)
         .set({ driveViewUrl: viewUrl })
         .where(eq(invoices.id, invoice.id));
     }
-  } catch (e) {
-    console.error("Drive backup skipped:", e);
+  }
+
+  await logAction({
+    orgId,
+    entity: "invoice",
+    entityId: invoice.id,
+    action: "create",
+    summary: `Uploaded receipt — ${keys.length} page(s)`,
+  });
+}
+
+export async function uploadInvoice(formData: FormData) {
+  const raw = formData.getAll("file");
+  const singleReceipt = formData.get("singleReceipt") === "1";
+
+  const files = raw.filter(
+    (f): f is File =>
+      f instanceof File &&
+      f.size > 0 &&
+      f.size <= MAX_BYTES &&
+      Boolean(ALLOWED_TYPES[f.type])
+  );
+
+  if (files.length === 0) return;
+
+  const [org] = await db.select().from(organizations).limit(1);
+
+  if (singleReceipt) {
+    await createInvoiceFromFiles(org.id, files);
+  } else {
+    for (const file of files) {
+      await createInvoiceFromFiles(org.id, [file]);
+    }
   }
 
   revalidatePath("/invoices");
+  revalidatePath("/logs");
 }
 
 export async function confirmLine(formData: FormData) {
@@ -332,20 +398,23 @@ export async function postInvoice(formData: FormData) {
       .where(eq(invoices.id, invoiceId));
   });
 
+  await logAction({
+    orgId: invoice.orgId,
+    entity: "invoice",
+    entityId: invoiceId,
+    action: "create",
+    summary: `Posted invoice ${invoice.invoiceNumber ?? "(no number)"} — ${postable.length} line(s) to inventory`,
+  });
+
   revalidatePath("/invoices");
   revalidatePath("/");
+  revalidatePath("/logs");
 }
-
-type ExtractionResult = {
-  error?: string;
-  duplicate?: boolean;
-  success?: boolean;
-};
 
 export async function runExtraction(
   prevState: unknown,
   formData: FormData
-): Promise<ExtractionResult> {
+): Promise<ActionResult> {
   const invoiceId = String(formData.get("invoiceId") ?? "");
   const force = formData.get("force") === "1";
   if (!invoiceId) return { error: "Missing invoice." };
@@ -356,12 +425,37 @@ export async function runExtraction(
     .where(eq(invoices.id, invoiceId))
     .limit(1);
 
-  if (!invoice?.sourceFileKey) return { error: "No receipt file on this invoice." };
+  if (!invoice) return { error: "Invoice not found." };
+
+  const pages = await db
+    .select()
+    .from(invoiceFiles)
+    .where(eq(invoiceFiles.invoiceId, invoiceId))
+    .orderBy(invoiceFiles.pageNumber);
+
+  let imageParts: ImagePart[];
+
+  if (pages.length > 0) {
+    imageParts = await Promise.all(
+      pages.map(async (p) => ({
+        bytes: await readUpload(p.fileKey),
+        mimeType: mimeFromKey(p.fileKey),
+      }))
+    );
+  } else if (invoice.sourceFileKey) {
+    imageParts = [
+      {
+        bytes: await readUpload(invoice.sourceFileKey),
+        mimeType: mimeFromKey(invoice.sourceFileKey),
+      },
+    ];
+  } else {
+    return { error: "No receipt file on this invoice." };
+  }
 
   let result;
   try {
-    const bytes = await readUpload(invoice.sourceFileKey);
-        result = await extractInvoiceWithRetry(bytes, mimeFromKey(invoice.sourceFileKey));
+    result = await extractPagesWithRetry(imageParts);
   } catch (e) {
     console.error("Extraction failed:", e);
     const msg = (e as Error).message;
@@ -444,9 +538,6 @@ export async function runExtraction(
   return { success: true };
 }
 
-const AUTO_MATCH_THRESHOLD = 0.78;
-const MIN_CANDIDATE = 0.55;
-
 export async function runMatching(formData: FormData) {
   const invoiceId = String(formData.get("invoiceId") ?? "");
   if (!invoiceId) return;
@@ -512,17 +603,20 @@ export async function runMatching(formData: FormData) {
         productId: best.id,
         matchConfidence: best.similarity,
         matchStatus:
-          best.similarity >= AUTO_MATCH_THRESHOLD ? "auto_matched" : "needs_review",
+          best.similarity >= AUTO_MATCH_THRESHOLD
+            ? "auto_matched"
+            : "needs_review",
       })
       .where(eq(invoiceLines.id, line.id));
   }
 
   revalidatePath("/invoices");
 }
+
 export async function deleteInvoice(
   prevState: unknown,
   formData: FormData
-): Promise<{ error?: string; success?: boolean }> {
+): Promise<ActionResult> {
   const invoiceId = String(formData.get("invoiceId") ?? "");
   if (!invoiceId) return { error: "Missing invoice." };
 
@@ -535,9 +629,7 @@ export async function deleteInvoice(
   if (!invoice) return { error: "Invoice not found." };
 
   if (invoice.status === "posted") {
-    return {
-      error: "Posted invoices cannot be deleted. Reverse it first.",
-    };
+    return { error: "Posted invoices cannot be deleted. Reverse it first." };
   }
 
   const lines = await db
@@ -564,7 +656,7 @@ export async function deleteInvoice(
 export async function reverseInvoice(
   prevState: unknown,
   formData: FormData
-): Promise<{ error?: string; success?: boolean }> {
+): Promise<ActionResult> {
   const invoiceId = String(formData.get("invoiceId") ?? "");
   if (!invoiceId) return { error: "Missing invoice." };
 
@@ -628,10 +720,11 @@ export async function reverseInvoice(
   revalidatePath("/logs");
   return { success: true };
 }
+
 export async function deleteProduct(
   prevState: unknown,
   formData: FormData
-): Promise<{ error?: string; success?: boolean }> {
+): Promise<ActionResult> {
   const productId = String(formData.get("productId") ?? "");
   if (!productId) return { error: "Missing product." };
 
@@ -650,9 +743,7 @@ export async function deleteProduct(
     .limit(1);
 
   if (hasHistory) {
-    return {
-      error: "This product has stock history and cannot be deleted.",
-    };
+    return { error: "This product has stock history and cannot be deleted." };
   }
 
   await logAction({
@@ -675,7 +766,7 @@ export async function deleteProduct(
 export async function reverseLedgerEntry(
   prevState: unknown,
   formData: FormData
-): Promise<{ error?: string; success?: boolean }> {
+): Promise<ActionResult> {
   const entryId = String(formData.get("entryId") ?? "");
   if (!entryId) return { error: "Missing entry." };
 
