@@ -1,8 +1,7 @@
 import {
   pgTable, pgEnum, uuid, text, integer, bigint, real, date,
-  timestamp, unique, index, vector
+  timestamp, unique, index, vector, jsonb,
 } from "drizzle-orm/pg-core";
-
 
 export const ledgerReason = pgEnum("ledger_reason", [
   "purchase", "sale", "adjustment", "stock_count", "reversal",
@@ -68,6 +67,7 @@ export const invoiceLines = pgTable("invoice_lines", {
     .references(() => invoices.id, { onDelete: "cascade" }),
   lineNumber: integer("line_number").notNull(),
   rawDescription: text("raw_description").notNull(),
+  serialNumber: text("serial_number"),
   quantity: integer("quantity").notNull(),
   unitPriceCents: integer("unit_price_cents").notNull().default(0),
   productId: uuid("product_id").references(() => products.id),
@@ -89,3 +89,46 @@ export const stockLedger = pgTable("stock_ledger", {
 }, (t) => [
   index("stock_ledger_product_idx").on(t.productId, t.occurredAt),
 ]);
+
+export const auditAction = pgEnum("audit_action", [
+  "create",
+  "update",
+  "delete",
+  "reverse",
+]);
+
+export const auditLog = pgTable(
+  "audit_log",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    orgId: uuid("org_id")
+      .notNull()
+      .references(() => organizations.id, { onDelete: "cascade" }),
+    entity: text("entity").notNull(),
+    entityId: uuid("entity_id"),
+    action: auditAction("action").notNull(),
+    summary: text("summary").notNull(),
+    details: jsonb("details"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("audit_log_org_created_idx").on(t.orgId, t.createdAt)]
+);
+
+export const invoiceFiles = pgTable(
+  "invoice_files",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    invoiceId: uuid("invoice_id")
+      .notNull()
+      .references(() => invoices.id, { onDelete: "cascade" }),
+    fileKey: text("file_key").notNull(),
+    pageNumber: integer("page_number").notNull(),
+    driveViewUrl: text("drive_view_url"),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [index("invoice_files_invoice_idx").on(t.invoiceId, t.pageNumber)]
+);

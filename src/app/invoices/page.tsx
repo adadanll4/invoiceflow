@@ -1,6 +1,7 @@
 import { desc, eq } from "drizzle-orm";
 import { db } from "@/db";
 import {
+  invoiceFiles,
   invoiceLines,
   invoices,
   organizations,
@@ -11,11 +12,13 @@ import {
   confirmLine,
   postInvoice,
   rejectLine,
-  runExtraction,
   runMatching,
   uploadInvoice,
 } from "../actions";
+
 import InvoiceForm from "./invoice-form";
+import ReadReceiptButton from "./read-receipt-button";
+import InvoiceActions from "./invoice-actions";
 
 const BADGE: Record<string, string> = {
   auto_matched: "bg-emerald-100 text-emerald-800",
@@ -24,6 +27,8 @@ const BADGE: Record<string, string> = {
   unmatched: "bg-red-100 text-red-800",
   rejected: "bg-gray-200 text-gray-700",
 };
+
+const LINK_CLASS = "rounded-md border px-3 py-1.5 text-sm text-gray-600";
 
 export default async function InvoicesPage() {
   const [org] = await db.select().from(organizations).limit(1);
@@ -69,6 +74,17 @@ export default async function InvoicesPage() {
     .where(eq(invoices.orgId, org.id))
     .orderBy(invoiceLines.lineNumber);
 
+  const allFiles = await db
+    .select({
+      invoiceId: invoiceFiles.invoiceId,
+      pageNumber: invoiceFiles.pageNumber,
+      driveViewUrl: invoiceFiles.driveViewUrl,
+    })
+    .from(invoiceFiles)
+    .innerJoin(invoices, eq(invoiceFiles.invoiceId, invoices.id))
+    .where(eq(invoices.orgId, org.id))
+    .orderBy(invoiceFiles.pageNumber);
+
   const linesByInvoice = new Map<string, typeof allLines>();
   for (const line of allLines) {
     const existing = linesByInvoice.get(line.invoiceId) ?? [];
@@ -76,24 +92,38 @@ export default async function InvoicesPage() {
     linesByInvoice.set(line.invoiceId, existing);
   }
 
+  const filesByInvoice = new Map<string, typeof allFiles>();
+  for (const f of allFiles) {
+    const existing = filesByInvoice.get(f.invoiceId) ?? [];
+    existing.push(f);
+    filesByInvoice.set(f.invoiceId, existing);
+  }
+
   return (
     <main className="mx-auto max-w-3xl p-8">
       <h1 className="mb-6 text-2xl font-medium">Invoices</h1>
 
-      <form action={uploadInvoice} className="mb-8 flex gap-2">
-        <input
-          name="file"
-          type="file"
-          required
-          accept="image/jpeg,image/png,image/webp,application/pdf"
-          className="flex-1 rounded-md border px-3 py-2 text-sm"
-        />
-        <button
-          type="submit"
-          className="rounded-md bg-black px-4 py-2 text-sm text-white"
-        >
-          Upload receipt
-        </button>
+      <form action={uploadInvoice} className="mb-8 space-y-2">
+        <div className="flex gap-2">
+          <input
+            name="file"
+            type="file"
+            multiple
+            required
+            accept="image/jpeg,image/png,image/webp,application/pdf"
+            className="flex-1 rounded-md border px-3 py-2 text-sm"
+          />
+          <button
+            type="submit"
+            className="rounded-md bg-black px-4 py-2 text-sm text-white"
+          >
+            Upload
+          </button>
+        </div>
+        <label className="flex items-center gap-2 text-sm text-gray-600">
+          <input type="checkbox" name="singleReceipt" value="1" />
+          These files are pages of ONE long receipt
+        </label>
       </form>
 
       {list.length === 0 ? (
@@ -102,6 +132,8 @@ export default async function InvoicesPage() {
         <ul className="divide-y">
           {list.map((inv) => {
             const lines = linesByInvoice.get(inv.id) ?? [];
+            const pageFiles = filesByInvoice.get(inv.id) ?? [];
+            const driveLinks = pageFiles.filter((f) => f.driveViewUrl);
             const isPosted = inv.status === "posted";
             const unresolved = lines.filter(
               (l) =>
@@ -123,6 +155,11 @@ export default async function InvoicesPage() {
                       >
                         {inv.status}
                       </span>
+                      {pageFiles.length > 1 && (
+                        <span className="rounded bg-gray-100 px-2 py-0.5 text-xs text-gray-600">
+                          {pageFiles.length} pages
+                        </span>
+                      )}
                     </div>
                     <div className="text-sm text-gray-500">
                       {inv.supplierName ?? "Unknown supplier"}
@@ -135,28 +172,20 @@ export default async function InvoicesPage() {
                       ₱{(inv.totalCents / 100).toFixed(2)}
                     </span>
 
-                    {inv.driveViewUrl && (
-                      
-                        <a
-                          href={inv.driveViewUrl}
-                        target="_blank"
-                        rel="noopener noreferrer"
-                        className="rounded-md border px-3 py-1.5 text-sm text-gray-600"
-                      >
-                        Drive
-                      </a>
-                    )}
+                    {driveLinks.length > 0
+                      ? driveLinks.map((f) => (
+                          <a key={f.pageNumber} href={f.driveViewUrl!} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
+                            {driveLinks.length > 1 ? `Drive p${f.pageNumber}` : "Drive"}
+                          </a>
+                        ))
+                      : inv.driveViewUrl && (
+                          <a href={inv.driveViewUrl} target="_blank" rel="noopener noreferrer" className={LINK_CLASS}>
+                            Drive
+                          </a>
+                        )}
 
                     {inv.sourceFileKey && !isPosted && (
-                      <form action={runExtraction}>
-                        <input type="hidden" name="invoiceId" value={inv.id} />
-                        <button
-                          type="submit"
-                          className="rounded-md border px-3 py-1.5 text-sm"
-                        >
-                          {lines.length > 0 ? "Re-read" : "Read receipt"}
-                        </button>
-                      </form>
+                      <ReadReceiptButton invoiceId={inv.id} hasLines={lines.length > 0} />
                     )}
 
                     {lines.length > 0 && !isPosted && (
@@ -183,6 +212,8 @@ export default async function InvoicesPage() {
                         </button>
                       </form>
                     )}
+
+                    <InvoiceActions invoiceId={inv.id} status={inv.status} />
                   </div>
                 </div>
 

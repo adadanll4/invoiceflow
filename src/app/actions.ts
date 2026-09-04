@@ -11,11 +11,13 @@ import {
   suppliers,
 } from "@/db/schema";
 import { ALLOWED_TYPES, MAX_BYTES, saveUpload } from "@/lib/storage";
-import { and, eq, isNotNull, sql } from "drizzle-orm";
-import { extractInvoice } from "@/lib/extract";
+import { extractInvoiceWithRetry } from "@/lib/extract";
 import { mimeFromKey, readUpload } from "@/lib/storage";
 import { backupToDrive } from "@/lib/drive";
 import { embed } from "@/lib/embed";
+import { and, eq, inArray, isNotNull, ne, sql } from "drizzle-orm";
+import { logAction } from "@/lib/audit";
+
 
 export async function receiveStock(formData: FormData) {
   const productId = String(formData.get("productId") ?? "");
@@ -26,18 +28,34 @@ export async function receiveStock(formData: FormData) {
 
   const [org] = await db.select().from(organizations).limit(1);
 
-  await db.insert(stockLedger).values({
+  const [entry] = await db
+    .insert(stockLedger)
+    .values({
+      orgId: org.id,
+      productId,
+      delta: quantity,
+      reason: quantity > 0 ? "purchase" : "sale",
+      note: "manual entry",
+    })
+    .returning();
+
+  const [prod] = await db
+    .select({ sku: products.sku })
+    .from(products)
+    .where(eq(products.id, productId))
+    .limit(1);
+
+  await logAction({
     orgId: org.id,
-    productId,
-    delta: quantity,
-    reason: quantity > 0 ? "purchase" : "sale",
-    note: "manual entry",
+    entity: "stock_movement",
+    entityId: entry.id,
+    action: "create",
+    summary: `Manual stock ${quantity > 0 ? "+" : ""}${quantity} on ${prod?.sku ?? "product"}`,
   });
 
   revalidatePath("/");
-  
+  revalidatePath("/logs");
 }
-
 export async function createProduct(formData: FormData) {
   const sku = String(formData.get("sku") ?? "").trim().toUpperCase();
   const name = String(formData.get("name") ?? "").trim();
@@ -49,19 +67,31 @@ export async function createProduct(formData: FormData) {
 
   const [org] = await db.select().from(organizations).limit(1);
 
+  let created;
   try {
-    await db.insert(products).values({
-      orgId: org.id,
-      sku,
-      name,
-      unit: unit || "each",
-      unitCostCents: Math.round((costPesos || 0) * 100),
-      reorderPoint: Number.isInteger(reorderPoint) ? reorderPoint : 0,
-    });
+    [created] = await db
+      .insert(products)
+      .values({
+        orgId: org.id,
+        sku,
+        name,
+        unit: unit || "each",
+        unitCostCents: Math.round((costPesos || 0) * 100),
+        reorderPoint: Number.isInteger(reorderPoint) ? reorderPoint : 0,
+      })
+      .returning();
   } catch (e) {
     console.error("Could not create product:", e);
     return;
   }
+
+  await logAction({
+    orgId: org.id,
+    entity: "product",
+    entityId: created.id,
+    action: "create",
+    summary: `Created product ${sku} — ${name}`,
+  });
 
   revalidatePath("/products");
   revalidatePath("/");
@@ -306,9 +336,19 @@ export async function postInvoice(formData: FormData) {
   revalidatePath("/");
 }
 
-export async function runExtraction(formData: FormData) {
+type ExtractionResult = {
+  error?: string;
+  duplicate?: boolean;
+  success?: boolean;
+};
+
+export async function runExtraction(
+  prevState: unknown,
+  formData: FormData
+): Promise<ExtractionResult> {
   const invoiceId = String(formData.get("invoiceId") ?? "");
-  if (!invoiceId) return;
+  const force = formData.get("force") === "1";
+  if (!invoiceId) return { error: "Missing invoice." };
 
   const [invoice] = await db
     .select()
@@ -316,20 +356,47 @@ export async function runExtraction(formData: FormData) {
     .where(eq(invoices.id, invoiceId))
     .limit(1);
 
-  if (!invoice?.sourceFileKey) return;
+  if (!invoice?.sourceFileKey) return { error: "No receipt file on this invoice." };
 
   let result;
   try {
     const bytes = await readUpload(invoice.sourceFileKey);
-    result = await extractInvoice(bytes, mimeFromKey(invoice.sourceFileKey));
+        result = await extractInvoiceWithRetry(bytes, mimeFromKey(invoice.sourceFileKey));
   } catch (e) {
     console.error("Extraction failed:", e);
-    return;
+    const msg = (e as Error).message;
+    if (msg.includes("503")) {
+      return { error: "Gemini is busy right now. Try again in a minute." };
+    }
+    if (msg.includes("429")) {
+      return { error: "Daily API quota reached. Resets at midnight Pacific." };
+    }
+    return { error: "Could not read the receipt. Check the server log." };
   }
 
   if (result.lines.length === 0) {
-    console.warn("No line items found in", invoice.sourceFileKey);
-    return;
+    return { error: "No line items found on this receipt." };
+  }
+
+  if (result.invoiceNumber && !force) {
+    const [duplicate] = await db
+      .select({ id: invoices.id })
+      .from(invoices)
+      .where(
+        and(
+          eq(invoices.orgId, invoice.orgId),
+          eq(invoices.invoiceNumber, result.invoiceNumber),
+          ne(invoices.id, invoiceId)
+        )
+      )
+      .limit(1);
+
+    if (duplicate) {
+      return {
+        error: `Invoice ${result.invoiceNumber} already exists.`,
+        duplicate: true,
+      };
+    }
   }
 
   let supplierId = invoice.supplierId;
@@ -354,6 +421,7 @@ export async function runExtraction(formData: FormData) {
         invoiceId,
         lineNumber: i + 1,
         rawDescription: line.description,
+        serialNumber: line.serialNumber,
         quantity: Math.round(line.quantity),
         unitPriceCents: Math.round(line.unitPrice * 100),
         matchStatus: "unmatched",
@@ -373,6 +441,7 @@ export async function runExtraction(formData: FormData) {
   });
 
   revalidatePath("/invoices");
+  return { success: true };
 }
 
 const AUTO_MATCH_THRESHOLD = 0.78;
@@ -449,4 +518,204 @@ export async function runMatching(formData: FormData) {
   }
 
   revalidatePath("/invoices");
+}
+export async function deleteInvoice(
+  prevState: unknown,
+  formData: FormData
+): Promise<{ error?: string; success?: boolean }> {
+  const invoiceId = String(formData.get("invoiceId") ?? "");
+  if (!invoiceId) return { error: "Missing invoice." };
+
+  const [invoice] = await db
+    .select()
+    .from(invoices)
+    .where(eq(invoices.id, invoiceId))
+    .limit(1);
+
+  if (!invoice) return { error: "Invoice not found." };
+
+  if (invoice.status === "posted") {
+    return {
+      error: "Posted invoices cannot be deleted. Reverse it first.",
+    };
+  }
+
+  const lines = await db
+    .select()
+    .from(invoiceLines)
+    .where(eq(invoiceLines.invoiceId, invoiceId));
+
+  await logAction({
+    orgId: invoice.orgId,
+    entity: "invoice",
+    entityId: invoiceId,
+    action: "delete",
+    summary: `Deleted invoice ${invoice.invoiceNumber ?? "(no number)"} — ${lines.length} line(s), ₱${(invoice.totalCents / 100).toFixed(2)}`,
+    details: { invoice, lines },
+  });
+
+  await db.delete(invoices).where(eq(invoices.id, invoiceId));
+
+  revalidatePath("/invoices");
+  revalidatePath("/logs");
+  return { success: true };
+}
+
+export async function reverseInvoice(
+  prevState: unknown,
+  formData: FormData
+): Promise<{ error?: string; success?: boolean }> {
+  const invoiceId = String(formData.get("invoiceId") ?? "");
+  if (!invoiceId) return { error: "Missing invoice." };
+
+  const [invoice] = await db
+    .select()
+    .from(invoices)
+    .where(eq(invoices.id, invoiceId))
+    .limit(1);
+
+  if (!invoice) return { error: "Invoice not found." };
+  if (invoice.status !== "posted") {
+    return { error: "Only posted invoices can be reversed." };
+  }
+
+  const lines = await db
+    .select({ id: invoiceLines.id })
+    .from(invoiceLines)
+    .where(eq(invoiceLines.invoiceId, invoiceId));
+
+  const lineIds = lines.map((l) => l.id);
+  if (lineIds.length === 0) return { error: "No lines on this invoice." };
+
+  const ledgerRows = await db
+    .select()
+    .from(stockLedger)
+    .where(inArray(stockLedger.invoiceLineId, lineIds));
+
+  if (ledgerRows.length === 0) {
+    return { error: "No stock movements found for this invoice." };
+  }
+
+  await db.transaction(async (tx) => {
+    for (const row of ledgerRows) {
+      await tx.insert(stockLedger).values({
+        orgId: row.orgId,
+        productId: row.productId,
+        delta: -row.delta,
+        reason: "reversal",
+        invoiceLineId: row.invoiceLineId,
+        note: `Reversal of ${invoice.invoiceNumber ?? "invoice"}`,
+      });
+    }
+
+    await tx
+      .update(invoices)
+      .set({ status: "void" })
+      .where(eq(invoices.id, invoiceId));
+  });
+
+  await logAction({
+    orgId: invoice.orgId,
+    entity: "invoice",
+    entityId: invoiceId,
+    action: "reverse",
+    summary: `Reversed invoice ${invoice.invoiceNumber ?? "(no number)"} — ${ledgerRows.length} stock movement(s) undone`,
+    details: { reversed: ledgerRows },
+  });
+
+  revalidatePath("/invoices");
+  revalidatePath("/");
+  revalidatePath("/logs");
+  return { success: true };
+}
+export async function deleteProduct(
+  prevState: unknown,
+  formData: FormData
+): Promise<{ error?: string; success?: boolean }> {
+  const productId = String(formData.get("productId") ?? "");
+  if (!productId) return { error: "Missing product." };
+
+  const [product] = await db
+    .select()
+    .from(products)
+    .where(eq(products.id, productId))
+    .limit(1);
+
+  if (!product) return { error: "Product not found." };
+
+  const [hasHistory] = await db
+    .select({ id: stockLedger.id })
+    .from(stockLedger)
+    .where(eq(stockLedger.productId, productId))
+    .limit(1);
+
+  if (hasHistory) {
+    return {
+      error: "This product has stock history and cannot be deleted.",
+    };
+  }
+
+  await logAction({
+    orgId: product.orgId,
+    entity: "product",
+    entityId: productId,
+    action: "delete",
+    summary: `Deleted product ${product.sku} — ${product.name}`,
+    details: { product },
+  });
+
+  await db.delete(products).where(eq(products.id, productId));
+
+  revalidatePath("/products");
+  revalidatePath("/");
+  revalidatePath("/logs");
+  return { success: true };
+}
+
+export async function reverseLedgerEntry(
+  prevState: unknown,
+  formData: FormData
+): Promise<{ error?: string; success?: boolean }> {
+  const entryId = String(formData.get("entryId") ?? "");
+  if (!entryId) return { error: "Missing entry." };
+
+  const [entry] = await db
+    .select()
+    .from(stockLedger)
+    .where(eq(stockLedger.id, entryId))
+    .limit(1);
+
+  if (!entry) return { error: "Entry not found." };
+
+  if (entry.reason === "reversal") {
+    return { error: "This is already a reversal." };
+  }
+
+  const [product] = await db
+    .select({ sku: products.sku })
+    .from(products)
+    .where(eq(products.id, entry.productId))
+    .limit(1);
+
+  await db.insert(stockLedger).values({
+    orgId: entry.orgId,
+    productId: entry.productId,
+    delta: -entry.delta,
+    reason: "reversal",
+    invoiceLineId: entry.invoiceLineId,
+    note: `Reversal of ${entry.note ?? "entry"}`,
+  });
+
+  await logAction({
+    orgId: entry.orgId,
+    entity: "stock_movement",
+    entityId: entryId,
+    action: "reverse",
+    summary: `Reversed ${entry.delta > 0 ? "+" : ""}${entry.delta} on ${product?.sku ?? "product"}`,
+    details: { original: entry },
+  });
+
+  revalidatePath("/");
+  revalidatePath("/logs");
+  return { success: true };
 }

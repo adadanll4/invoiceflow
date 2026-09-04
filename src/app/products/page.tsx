@@ -2,6 +2,7 @@ import { eq } from "drizzle-orm";
 import { db } from "@/db";
 import { organizations, products } from "@/db/schema";
 import { createProduct } from "../actions";
+import ProductActions from "./product-actions";
 
 export default async function ProductsPage() {
   const [org] = await db.select().from(organizations).limit(1);
@@ -25,9 +26,12 @@ export default async function ProductsPage() {
                 {p.sku} · {p.unit} · reorder at {p.reorderPoint}
               </div>
             </div>
-            <span className="tabular-nums text-sm text-gray-500">
-              ₱{(p.unitCostCents / 100).toFixed(2)}
-            </span>
+            <div className="flex items-center gap-3">
+              <span className="tabular-nums text-sm text-gray-500">
+                ₱{(p.unitCostCents / 100).toFixed(2)}
+              </span>
+              <ProductActions productId={p.id} />
+            </div>
           </li>
         ))}
       </ul>
