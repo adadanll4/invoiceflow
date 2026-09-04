@@ -4,6 +4,7 @@ import {
   invoiceFiles,
   invoiceLines,
   invoices,
+  lineSerials,
   organizations,
   products,
   suppliers,
@@ -19,6 +20,7 @@ import {
 import InvoiceForm from "./invoice-form";
 import ReadReceiptButton from "./read-receipt-button";
 import InvoiceActions from "./invoice-actions";
+import SerialScanButton from "./serial-scan-button";
 
 const BADGE: Record<string, string> = {
   auto_matched: "bg-emerald-100 text-emerald-800",
@@ -84,6 +86,25 @@ export default async function InvoicesPage() {
     .innerJoin(invoices, eq(invoiceFiles.invoiceId, invoices.id))
     .where(eq(invoices.orgId, org.id))
     .orderBy(invoiceFiles.pageNumber);
+  
+    const allSerials = await db
+    .select({
+      invoiceLineId: lineSerials.invoiceLineId,
+      serial: lineSerials.serial,
+      position: lineSerials.position,
+    })
+    .from(lineSerials)
+    .innerJoin(invoiceLines, eq(lineSerials.invoiceLineId, invoiceLines.id))
+    .innerJoin(invoices, eq(invoiceLines.invoiceId, invoices.id))
+    .where(eq(invoices.orgId, org.id))
+    .orderBy(lineSerials.position);
+
+  const serialsByLine = new Map<string, typeof allSerials>();
+  for (const s of allSerials) {
+    const existing = serialsByLine.get(s.invoiceLineId) ?? [];
+    existing.push(s);
+    serialsByLine.set(s.invoiceLineId, existing);
+  }
 
   const linesByInvoice = new Map<string, typeof allLines>();
   for (const line of allLines) {
@@ -261,6 +282,30 @@ export default async function InvoicesPage() {
                                 {l.matchConfidence.toFixed(3)}
                               </span>
                             )}
+                                                      {!isPosted && (
+                            <SerialScanButton
+                              lineId={l.id}
+                              quantity={l.quantity}
+                              scannedCount={(serialsByLine.get(l.id) ?? []).length}
+                            />
+                          )}
+                          {(serialsByLine.get(l.id) ?? []).length > 0 && (
+                            <details className="mt-1">
+                              <summary className="cursor-pointer text-xs text-gray-400">
+                                {(serialsByLine.get(l.id) ?? []).length} serial(s)
+                              </summary>
+                              <div className="mt-1 flex flex-wrap gap-1">
+                                {(serialsByLine.get(l.id) ?? []).map((s) => (
+                                  <span
+                                    key={s.serial}
+                                    className="rounded bg-gray-100 px-1.5 py-0.5 font-mono text-xs text-gray-600"
+                                  >
+                                    {s.serial}
+                                  </span>
+                                ))}
+                              </div>
+                            </details>
+                          )}
                           </div>
 
                           {needsAction && (

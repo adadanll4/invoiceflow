@@ -23,6 +23,8 @@ import { extractPagesWithRetry, type ImagePart } from "@/lib/extract";
 import { backupToDrive } from "@/lib/drive";
 import { embed } from "@/lib/embed";
 import { logAction } from "@/lib/audit";
+import { lineSerials } from "@/db/schema";
+import { scanSerialsWithRetry } from "@/lib/serials";
 
 const AUTO_MATCH_THRESHOLD = 0.78;
 const MIN_CANDIDATE = 0.55;
@@ -809,4 +811,122 @@ export async function reverseLedgerEntry(
   revalidatePath("/");
   revalidatePath("/logs");
   return { success: true };
+}
+
+export async function scanLineSerials(
+  prevState: unknown,
+  formData: FormData
+): Promise<ActionResult & { found?: number; expected?: number }> {
+  const lineId = String(formData.get("lineId") ?? "");
+  if (!lineId) return { error: "Missing line." };
+
+  const [line] = await db
+    .select()
+    .from(invoiceLines)
+    .where(eq(invoiceLines.id, lineId))
+    .limit(1);
+
+  if (!line) return { error: "Line not found." };
+
+  const pages = await db
+    .select()
+    .from(invoiceFiles)
+    .where(eq(invoiceFiles.invoiceId, line.invoiceId))
+    .orderBy(invoiceFiles.pageNumber);
+
+  let imageParts: ImagePart[];
+
+  if (pages.length > 0) {
+    imageParts = await Promise.all(
+      pages.map(async (p) => ({
+        bytes: await readUpload(p.fileKey),
+        mimeType: mimeFromKey(p.fileKey),
+      }))
+    );
+  } else {
+    const [invoice] = await db
+      .select({ key: invoices.sourceFileKey })
+      .from(invoices)
+      .where(eq(invoices.id, line.invoiceId))
+      .limit(1);
+
+    if (!invoice?.key) return { error: "No receipt file to scan." };
+
+    imageParts = [
+      {
+        bytes: await readUpload(invoice.key),
+        mimeType: mimeFromKey(invoice.key),
+      },
+    ];
+  }
+
+  let result;
+  try {
+    result = await scanSerialsWithRetry(
+      imageParts,
+      line.rawDescription,
+      line.quantity
+    );
+  } catch (e) {
+    console.error("Serial scan failed:", e);
+    const msg = (e as Error).message;
+    if (msg.includes("503")) {
+      return { error: "Gemini is busy. Try again in a minute." };
+    }
+    if (msg.includes("429")) {
+      return { error: "Daily API quota reached." };
+    }
+    return { error: "Could not scan serials. Check the server log." };
+  }
+
+  if (result.serials.length === 0) {
+    return { error: "No serial numbers found on this receipt." };
+  }
+
+  await db.transaction(async (tx) => {
+    await tx.delete(lineSerials).where(eq(lineSerials.invoiceLineId, lineId));
+
+    for (const [i, serial] of result.serials.entries()) {
+      await tx.insert(lineSerials).values({
+        invoiceLineId: lineId,
+        serial,
+        position: i + 1,
+      });
+    }
+  });
+
+  const [invoiceRow] = await db
+    .select({ orgId: invoices.orgId })
+    .from(invoices)
+    .where(eq(invoices.id, line.invoiceId))
+    .limit(1);
+
+  if (invoiceRow) {
+    await logAction({
+      orgId: invoiceRow.orgId,
+      entity: "invoice_line",
+      entityId: lineId,
+      action: "update",
+      summary: `Scanned ${result.serials.length} of ${line.quantity} serial(s) for ${line.rawDescription.slice(0, 40)}`,
+      details: {
+        found: result.serials.length,
+        expected: line.quantity,
+        duplicatesDropped: result.duplicatesDropped,
+        lengthOutliers: result.lengthOutliers,
+      },
+    });
+  }
+
+  revalidatePath("/invoices");
+  revalidatePath("/logs");
+
+  if (result.serials.length !== line.quantity) {
+    return {
+      error: `Found ${result.serials.length} serials but quantity is ${line.quantity}. Check the receipt.`,
+      found: result.serials.length,
+      expected: line.quantity,
+    };
+  }
+
+  return { success: true, found: result.serials.length, expected: line.quantity };
 }

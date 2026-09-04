@@ -18,6 +18,8 @@ export type ExtractedInvoice = {
   lines: ExtractedLine[];
 };
 
+export const ENDPOINT_URL = ENDPOINT;
+
 export type ImagePart = { bytes: Buffer; mimeType: string };
 
 const PROMPT = [

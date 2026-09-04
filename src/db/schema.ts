@@ -132,3 +132,22 @@ export const invoiceFiles = pgTable(
   },
   (t) => [index("invoice_files_invoice_idx").on(t.invoiceId, t.pageNumber)]
 );
+
+export const lineSerials = pgTable(
+  "line_serials",
+  {
+    id: uuid("id").primaryKey().defaultRandom(),
+    invoiceLineId: uuid("invoice_line_id")
+      .notNull()
+      .references(() => invoiceLines.id, { onDelete: "cascade" }),
+    serial: text("serial").notNull(),
+    position: integer("position").notNull(),
+    createdAt: timestamp("created_at", { withTimezone: true })
+      .notNull()
+      .defaultNow(),
+  },
+  (t) => [
+    index("line_serials_line_idx").on(t.invoiceLineId, t.position),
+    unique("line_serials_unique").on(t.invoiceLineId, t.serial),
+  ]
+);
